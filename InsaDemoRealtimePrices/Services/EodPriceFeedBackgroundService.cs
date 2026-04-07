@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 using InsaDemoRealtimePrices.Hubs;
 using InsaDemoRealtimePrices.Models;
 using InsaDemoRealtimePrices.Options;
@@ -117,24 +118,232 @@ public sealed class EodPriceFeedBackgroundService : BackgroundService
 
     private async Task HandleFeedMessageAsync(string payload, CancellationToken cancellationToken)
     {
-        SecurityPriceTick? tick;
+        IReadOnlyCollection<SecurityPriceTick> ticks;
 
         try
         {
-            tick = JsonSerializer.Deserialize<SecurityPriceTick>(payload);
+            ticks = ParseTicks(payload);
         }
-        catch (JsonException)
+        catch (JsonException ex)
+        {
+            _logger.LogDebug(ex, "Unable to parse feed payload: {Payload}", payload);
+            return;
+        }
+
+        if (ticks.Count == 0)
         {
             return;
         }
 
-        if (tick is null || string.IsNullOrWhiteSpace(tick.Symbol))
+        foreach (var tick in ticks)
         {
-            return;
+            _snapshotStore.Upsert(tick);
+            await _hubContext.Clients.All.SendAsync("PriceUpdated", tick, cancellationToken);
+            await _sqlRepository.TryInsertAsync(tick, cancellationToken);
+        }
+    }
+
+    private static IReadOnlyCollection<SecurityPriceTick> ParseTicks(string payload)
+    {
+        using var document = JsonDocument.Parse(payload);
+        var ticks = new List<SecurityPriceTick>();
+        CollectTicks(document.RootElement, ticks);
+        return ticks;
+    }
+
+    private static void CollectTicks(JsonElement element, List<SecurityPriceTick> ticks)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                if (TryParseTick(element, out var tick))
+                {
+                    ticks.Add(tick);
+                    return;
+                }
+
+                if (TryGetProperty(element, out var data, "data"))
+                {
+                    CollectTicks(data, ticks);
+                }
+
+                break;
+
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    CollectTicks(item, ticks);
+                }
+
+                break;
+        }
+    }
+
+    private static bool TryParseTick(JsonElement element, out SecurityPriceTick tick)
+    {
+        tick = new SecurityPriceTick();
+
+        if (!TryGetString(element, out var symbol, "s", "symbol") || string.IsNullOrWhiteSpace(symbol))
+        {
+            return false;
         }
 
-        _snapshotStore.Upsert(tick);
-        await _hubContext.Clients.All.SendAsync("PriceUpdated", tick, cancellationToken);
-        await _sqlRepository.TryInsertAsync(tick, cancellationToken);
+        TryGetDecimal(element, out var askPrice, "ap", "askPrice", "a");
+        TryGetDecimal(element, out var bidPrice, "bp", "bidPrice", "b");
+        TryGetDecimal(element, out var tradePrice, "p", "price", "lastPrice");
+
+        if (!askPrice.HasValue)
+        {
+            askPrice = tradePrice;
+        }
+
+        if (!bidPrice.HasValue)
+        {
+            bidPrice = tradePrice;
+        }
+
+        TryGetInt32(element, out var askSize, "as", "askSize");
+        TryGetInt32(element, out var bidSize, "bs", "bidSize");
+        TryGetInt32(element, out var tradeSize, "v", "size");
+
+        if (!askSize.HasValue)
+        {
+            askSize = tradeSize;
+        }
+
+        if (!bidSize.HasValue)
+        {
+            bidSize = tradeSize;
+        }
+
+        TryGetInt64(element, out var feedEpochMs, "t", "ts", "feedEpochMs");
+
+        tick = new SecurityPriceTick
+        {
+            Symbol = symbol.Trim(),
+            AskPrice = askPrice ?? 0m,
+            AskSize = askSize ?? 0,
+            BidPrice = bidPrice ?? 0m,
+            BidSize = bidSize ?? 0,
+            FeedEpochMs = feedEpochMs ?? 0
+        };
+
+        return true;
+    }
+
+    private static bool TryGetProperty(JsonElement element, out JsonElement property, params string[] names)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var currentProperty in element.EnumerateObject())
+            {
+                foreach (var candidateName in names)
+                {
+                    if (string.Equals(currentProperty.Name, candidateName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        property = currentProperty.Value;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        property = default;
+        return false;
+    }
+
+    private static bool TryGetString(JsonElement element, out string? value, params string[] names)
+    {
+        value = null;
+        if (!TryGetProperty(element, out var property, names))
+        {
+            return false;
+        }
+
+        switch (property.ValueKind)
+        {
+            case JsonValueKind.String:
+                value = property.GetString();
+                return !string.IsNullOrWhiteSpace(value);
+
+            case JsonValueKind.Number:
+                value = property.ToString();
+                return !string.IsNullOrWhiteSpace(value);
+
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryGetDecimal(JsonElement element, out decimal? value, params string[] names)
+    {
+        value = null;
+        if (!TryGetProperty(element, out var property, names))
+        {
+            return false;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetDecimal(out var numberValue))
+        {
+            value = numberValue;
+            return true;
+        }
+
+        if (property.ValueKind == JsonValueKind.String &&
+            decimal.TryParse(property.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedValue))
+        {
+            value = parsedValue;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetInt32(JsonElement element, out int? value, params string[] names)
+    {
+        value = null;
+        if (!TryGetProperty(element, out var property, names))
+        {
+            return false;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var numberValue))
+        {
+            value = numberValue;
+            return true;
+        }
+
+        if (property.ValueKind == JsonValueKind.String &&
+            int.TryParse(property.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue))
+        {
+            value = parsedValue;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetInt64(JsonElement element, out long? value, params string[] names)
+    {
+        value = null;
+        if (!TryGetProperty(element, out var property, names))
+        {
+            return false;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out var numberValue))
+        {
+            value = numberValue;
+            return true;
+        }
+
+        if (property.ValueKind == JsonValueKind.String &&
+            long.TryParse(property.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue))
+        {
+            value = parsedValue;
+            return true;
+        }
+
+        return false;
     }
 }

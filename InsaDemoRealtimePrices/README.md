@@ -7,7 +7,7 @@ This project exposes:
 
 It ingests live prices from:
 
-- `wss://ws.eodhistoricaldata.com/ws/us?api_token=69b27001577999.54629717`
+- `wss://ws.eodhistoricaldata.com/ws/us-quote?api_token=69b27001577999.54629717`
 - Subscription payload:
   - `{"action":"subscribe","symbols":"AMZN,TSLA"}`
 
