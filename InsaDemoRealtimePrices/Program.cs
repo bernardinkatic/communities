@@ -29,6 +29,8 @@ var app = builder.Build();
 
 app.UseHttpsRedirection();
 app.UseCors();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.MapControllers();
 app.MapHub<PricesHub>("/hubs/prices");
 

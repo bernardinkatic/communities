@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>InsaDemo Price Feed Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 1.5rem;
+            background-color: #f7f7f8;
+            color: #222;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 1.4rem;
+        }
+
+        .panel {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .status {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.75rem;
+        }
+
+        button {
+            border: 1px solid #0a66c2;
+            background: #0a66c2;
+            color: #fff;
+            border-radius: 6px;
+            padding: 0.45rem 0.75rem;
+            cursor: pointer;
+        }
+
+        button.secondary {
+            background: #fff;
+            color: #0a66c2;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            background: #fff;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 0.5rem;
+            text-align: left;
+            font-size: 0.92rem;
+        }
+
+        th {
+            background: #f0f3f7;
+        }
+
+        .log {
+            max-height: 220px;
+            overflow: auto;
+            background: #111;
+            color: #e5e5e5;
+            padding: 0.65rem;
+            border-radius: 6px;
+            font-family: Consolas, monospace;
+            font-size: 0.82rem;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+</head>
+<body>
+    <h1>InsaDemo Real-Time Prices - Test Client</h1>
+
+    <div class="panel">
+        <div id="status" class="status">Status: disconnected</div>
+        <div class="controls">
+            <button id="connectBtn">Connect</button>
+            <button id="disconnectBtn" class="secondary">Disconnect</button>
+            <button id="refreshApiBtn" class="secondary">GET /api/prices/GetPrices</button>
+        </div>
+        <div>Hub URL: <code>/hubs/prices</code></div>
+    </div>
+
+    <div class="panel">
+        <h2>Latest Prices</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Ask Price</th>
+                    <th>Ask Size</th>
+                    <th>Bid Price</th>
+                    <th>Bid Size</th>
+                    <th>Feed Epoch (ms)</th>
+                </tr>
+            </thead>
+            <tbody id="pricesBody"></tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>API Snapshot (GetPrices)</h2>
+        <pre id="apiSnapshot">Not loaded yet.</pre>
+    </div>
+
+    <div class="panel">
+        <h2>Event Log</h2>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById("status");
+        const pricesBodyEl = document.getElementById("pricesBody");
+        const logEl = document.getElementById("log");
+        const apiSnapshotEl = document.getElementById("apiSnapshot");
+
+        const rowsBySymbol = new Map();
+        let connection = null;
+
+        function setStatus(text) {
+            statusEl.textContent = `Status: ${text}`;
+        }
+
+        function log(message) {
+            const time = new Date().toISOString();
+            logEl.textContent += `[${time}] ${message}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function upsertRow(tick) {
+            const symbol = tick.s ?? tick.symbol;
+            if (!symbol) {
+                return;
+            }
+
+            let row = rowsBySymbol.get(symbol);
+            if (!row) {
+                row = document.createElement("tr");
+                row.innerHTML = `
+                    <td data-col="symbol"></td>
+                    <td data-col="askPrice"></td>
+                    <td data-col="askSize"></td>
+                    <td data-col="bidPrice"></td>
+                    <td data-col="bidSize"></td>
+                    <td data-col="feedEpoch"></td>
+                `;
+                pricesBodyEl.appendChild(row);
+                rowsBySymbol.set(symbol, row);
+            }
+
+            row.querySelector('[data-col="symbol"]').textContent = symbol;
+            row.querySelector('[data-col="askPrice"]').textContent = tick.ap ?? tick.askPrice ?? "";
+            row.querySelector('[data-col="askSize"]').textContent = tick.as ?? tick.askSize ?? "";
+            row.querySelector('[data-col="bidPrice"]').textContent = tick.bp ?? tick.bidPrice ?? "";
+            row.querySelector('[data-col="bidSize"]').textContent = tick.bs ?? tick.bidSize ?? "";
+            row.querySelector('[data-col="feedEpoch"]').textContent = tick.t ?? tick.feedEpochMs ?? "";
+        }
+
+        async function loadApiSnapshot() {
+            try {
+                const response = await fetch("/api/prices/GetPrices");
+                const json = await response.json();
+                apiSnapshotEl.textContent = JSON.stringify(json, null, 2);
+                log(`Loaded API snapshot (${json.prices?.length ?? 0} prices).`);
+            } catch (err) {
+                log(`API snapshot failed: ${err}`);
+            }
+        }
+
+        async function connect() {
+            if (connection) {
+                return;
+            }
+
+            connection = new signalR.HubConnectionBuilder()
+                .withUrl("/hubs/prices")
+                .withAutomaticReconnect()
+                .build();
+
+            connection.on("PriceUpdated", (tick) => {
+                upsertRow(tick);
+                log(`PriceUpdated: ${JSON.stringify(tick)}`);
+            });
+
+            connection.on("PriceSnapshot", (ticks) => {
+                for (const tick of ticks) {
+                    upsertRow(tick);
+                }
+                log(`PriceSnapshot received (${ticks.length} prices).`);
+            });
+
+            connection.onreconnecting(() => setStatus("reconnecting"));
+            connection.onreconnected(() => setStatus("connected"));
+            connection.onclose(() => {
+                setStatus("disconnected");
+                connection = null;
+            });
+
+            await connection.start();
+            setStatus("connected");
+            log("Connected to hub.");
+            await connection.invoke("GetPrices");
+            log("Invoked hub GetPrices.");
+        }
+
+        async function disconnect() {
+            if (!connection) {
+                return;
+            }
+
+            await connection.stop();
+            setStatus("disconnected");
+            log("Disconnected from hub.");
+            connection = null;
+        }
+
+        document.getElementById("connectBtn").addEventListener("click", () => {
+            connect().catch(err => log(`Connect failed: ${err}`));
+        });
+
+        document.getElementById("disconnectBtn").addEventListener("click", () => {
+            disconnect().catch(err => log(`Disconnect failed: ${err}`));
+        });
+
+        document.getElementById("refreshApiBtn").addEventListener("click", () => {
+            loadApiSnapshot().catch(err => log(`Refresh failed: ${err}`));
+        });
+
+        loadApiSnapshot();
+    </script>
+</body>
+</html>
