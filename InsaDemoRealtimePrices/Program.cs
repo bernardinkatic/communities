@@ -33,5 +33,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapControllers();
 app.MapHub<PricesHub>("/hubs/prices");
+app.MapGet("/", () => Results.Redirect("/index.html"));
+app.MapFallbackToFile("index.html");
 
 app.Run();

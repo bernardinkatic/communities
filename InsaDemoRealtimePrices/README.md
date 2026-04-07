@@ -58,3 +58,11 @@ How to use:
 3. Click **Connect**.
 4. Click **Request Snapshot** (or use **Auto-request snapshot on connect**).
 
+### Troubleshooting
+
+- If `/` returns not found, open `/index.html` directly.
+- If `https://localhost:50640` is not available, run the app with the included launch profile:
+  - HTTPS profile: `https://localhost:50640`
+  - HTTP profile: `http://localhost:50641`
+- With `dotnet run`, always use the URL printed in the startup logs (for example: `Now listening on: ...`).
+
