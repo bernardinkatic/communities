@@ -3,6 +3,7 @@
 This project exposes:
 
 - `GET /api/prices/GetPrices` (Web API endpoint)
+- `GET /health` (simple health check)
 - SignalR hub at `/hubs/prices`
 
 It ingests live prices from:
@@ -54,9 +55,11 @@ What it does:
 How to use:
 
 1. Start the API.
-2. Open `https://localhost:<port>/` (or `http://localhost:<port>/` if HTTPS disabled).
-3. Click **Connect**.
-4. Click **Request Snapshot** (or use **Auto-request snapshot on connect**).
+2. Verify the API is up:
+   - `https://localhost:<port>/health` or `http://localhost:<port>/health`
+3. Open `https://localhost:<port>/` (or `http://localhost:<port>/` if HTTPS disabled).
+4. Click **Connect**.
+5. Click **Request Snapshot** (or use **Auto-request snapshot on connect**).
 
 ### Troubleshooting
 

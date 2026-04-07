@@ -33,6 +33,11 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapControllers();
 app.MapHub<PricesHub>("/hubs/prices");
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "Healthy",
+    utc = DateTimeOffset.UtcNow
+}));
 app.MapGet("/", () => Results.Redirect("/index.html"));
 app.MapFallbackToFile("index.html");
 
