@@ -7,9 +7,12 @@ This project exposes:
 
 It ingests live prices from:
 
-- `wss://ws.eodhistoricaldata.com/ws/us-quote?api_token=69b27001577999.54629717`
+- `wss://ws.eodhistoricaldata.com/ws/us-quote?api_token=demo` (default sample config)
 - Subscription payload:
-  - `{"action":"subscribe","symbols":"AMZN,TSLA"}`
+  - `{"action":"subscribe","symbols":"AAPL,MSFT,TSLA"}`
+
+If you provide your own EODHD token, set it in `EodPriceFeed:WebSocketUrl`.
+With the demo token, use supported symbols such as `AAPL`, `MSFT`, and `TSLA`.
 
 ## SQL Server
 

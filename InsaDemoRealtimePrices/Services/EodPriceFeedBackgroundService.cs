@@ -17,6 +17,7 @@ public sealed class EodPriceFeedBackgroundService : BackgroundService
     private readonly SqlServerPriceRepository _sqlRepository;
     private readonly IHubContext<PricesHub> _hubContext;
     private readonly ILogger<EodPriceFeedBackgroundService> _logger;
+    private string? _lastFeedStatusWarning;
 
     public EodPriceFeedBackgroundService(
         IOptions<EodPriceFeedOptions> options,
@@ -132,14 +133,51 @@ public sealed class EodPriceFeedBackgroundService : BackgroundService
 
         if (ticks.Count == 0)
         {
+            TryLogFeedStatus(payload);
             return;
         }
+
+        _lastFeedStatusWarning = null;
 
         foreach (var tick in ticks)
         {
             _snapshotStore.Upsert(tick);
             await _hubContext.Clients.All.SendAsync("PriceUpdated", tick, cancellationToken);
             await _sqlRepository.TryInsertAsync(tick, cancellationToken);
+        }
+    }
+
+    private void TryLogFeedStatus(string payload)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return;
+            }
+
+            if (!TryGetString(document.RootElement, out var message, "message") || string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            var hasStatusCode = TryGetInt32(document.RootElement, out var statusCode, "status", "status_code");
+            var warning = hasStatusCode
+                ? $"Feed status {statusCode}: {message}"
+                : $"Feed status: {message}";
+
+            if (string.Equals(_lastFeedStatusWarning, warning, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastFeedStatusWarning = warning;
+            _logger.LogWarning("{FeedStatusWarning}", warning);
+        }
+        catch (JsonException)
+        {
+            // Ignore non-json keepalive frames.
         }
     }
 
