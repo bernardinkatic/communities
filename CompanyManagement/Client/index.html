@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Company Management System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .login-section {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .hidden {
+            display: none;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        input, select {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f8f9fa;
+        }
+        .error {
+            color: red;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            margin: 10px 0;
+        }
+        .form-group {
+            margin: 10px 0;
+        }
+        label {
+            display: inline-block;
+            width: 120px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Company Management System</h1>
+            <p>A complete enterprise application with CRUD operations, authentication, and analytics</p>
+        </div>
+
+        <div id="loginSection" class="login-section">
+            <h3>Login</h3>
+            <div class="form-group">
+                <label>Username:</label>
+                <input type="text" id="username" placeholder="Bill or Jean" value="Bill">
+            </div>
+            <div class="form-group">
+                <label>Password:</label>
+                <input type="password" id="password" placeholder="Password" value="ItsNotSoft">
+            </div>
+            <button onclick="login()">Login</button>
+            <div id="loginMessage"></div>
+        </div>
+
+        <div id="mainContent" class="hidden">
+            <div class="section">
+                <h3>Departments</h3>
+                <button onclick="loadDepartments()">Load Departments</button>
+                <button onclick="showAddDepartmentForm()">Add New Department</button>
+                <div id="addDepartmentForm" class="hidden">
+                    <h4>Add New Department</h4>
+                    <div class="form-group">
+                        <label>Name:</label>
+                        <input type="text" id="deptName" placeholder="Department Name">
+                    </div>
+                    <div class="form-group">
+                        <label>Location:</label>
+                        <input type="text" id="deptLocation" placeholder="Location">
+                    </div>
+                    <button onclick="createDepartment()">Create</button>
+                    <button onclick="hideAddDepartmentForm()">Cancel</button>
+                </div>
+                <div id="departmentsContainer"></div>
+            </div>
+
+            <div class="section">
+                <h3>Employees</h3>
+                <button onclick="loadEmployees()">Load Employees</button>
+                <button onclick="showAddEmployeeForm()">Add New Employee</button>
+                <button onclick="exportEmployees()">Export Employees</button>
+                <div id="addEmployeeForm" class="hidden">
+                    <h4>Add New Employee</h4>
+                    <div class="form-group">
+                        <label>Name:</label>
+                        <input type="text" id="empName" placeholder="Employee Name">
+                    </div>
+                    <div class="form-group">
+                        <label>Salary:</label>
+                        <input type="number" id="empSalary" placeholder="Salary">
+                    </div>
+                    <div class="form-group">
+                        <label>Department:</label>
+                        <select id="empDepartment"></select>
+                    </div>
+                    <button onclick="createEmployee()">Create</button>
+                    <button onclick="hideAddEmployeeForm()">Cancel</button>
+                </div>
+                <div id="employeesContainer"></div>
+            </div>
+
+            <div class="section">
+                <h3>Analytics & Queries</h3>
+                <button onclick="runQuery('average-development-salary-excluding-london')">Avg Development Salary (excl. London)</button>
+                <button onclick="runQuery('locations-with-multiple-employees')">Locations with Multiple Employees</button>
+                <button onclick="runQuery('development-employees-by-location')">Development Employees by Location</button>
+                <button onclick="runQuery('second-highest-salary')">Second Highest Salary</button>
+                <button onclick="runQuery('department-view')">Department View</button>
+                <div id="queryResults"></div>
+            </div>
+
+            <div class="section">
+                <h3>Salary Management</h3>
+                <div class="form-group">
+                    <label>Employee ID:</label>
+                    <input type="number" id="salaryEmpId" placeholder="Employee ID">
+                </div>
+                <div class="form-group">
+                    <label>Percentage:</label>
+                    <input type="number" id="salaryPercentage" placeholder="10 for 10% increase">
+                </div>
+                <button onclick="updateSalary()">Update Salary</button>
+                <div id="salaryResults"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5134/api';
+        let authToken = '';
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    authToken = data.token;
+                    document.getElementById('loginMessage').innerHTML = 
+                        `<div class="success">Login successful! Welcome, ${data.user.loginUserName}</div>`;
+                    document.getElementById('loginSection').style.display = 'none';
+                    document.getElementById('mainContent').classList.remove('hidden');
+                    loadDepartmentsForSelect();
+                } else {
+                    document.getElementById('loginMessage').innerHTML = 
+                        '<div class="error">Invalid credentials</div>';
+                }
+            } catch (error) {
+                document.getElementById('loginMessage').innerHTML = 
+                    '<div class="error">Login failed: ' + error.message + '</div>';
+            }
+        }
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const options = {
+                method,
+                headers: {
+                    'Authorization': `Bearer ${authToken}`,
+                    'Content-Type': 'application/json',
+                }
+            };
+            
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+            
+            return fetch(`${API_BASE}${endpoint}`, options);
+        }
+
+        async function loadDepartments() {
+            try {
+                const response = await apiCall('/departments');
+                const departments = await response.json();
+                
+                let html = '<table><tr><th>No</th><th>Name</th><th>Location</th><th>Employees</th><th>Actions</th></tr>';
+                departments.forEach(dept => {
+                    html += `<tr>
+                        <td>${dept.departmentNo}</td>
+                        <td>${dept.departmentName}</td>
+                        <td>${dept.departmentLocation}</td>
+                        <td>${dept.employees.length}</td>
+                        <td><button onclick="deleteDepartment(${dept.departmentNo})">Delete</button></td>
+                    </tr>`;
+                });
+                html += '</table>';
+                
+                document.getElementById('departmentsContainer').innerHTML = html;
+            } catch (error) {
+                document.getElementById('departmentsContainer').innerHTML = 
+                    '<div class="error">Failed to load departments: ' + error.message + '</div>';
+            }
+        }
+
+        async function loadEmployees() {
+            try {
+                const response = await apiCall('/employees');
+                const employees = await response.json();
+                
+                let html = '<table><tr><th>No</th><th>Name</th><th>Salary</th><th>Department</th><th>Last Modified</th><th>Actions</th></tr>';
+                employees.forEach(emp => {
+                    const lastModified = emp.lastModifyDate ? new Date(emp.lastModifyDate).toLocaleString() : 'N/A';
+                    html += `<tr>
+                        <td>${emp.employeeNo}</td>
+                        <td>${emp.employeeName}</td>
+                        <td>$${emp.salary.toLocaleString()}</td>
+                        <td>${emp.department ? emp.department.departmentName + ' - ' + emp.department.departmentLocation : 'Unknown'}</td>
+                        <td>${lastModified}</td>
+                        <td><button onclick="deleteEmployee(${emp.employeeNo})">Delete</button></td>
+                    </tr>`;
+                });
+                html += '</table>';
+                
+                document.getElementById('employeesContainer').innerHTML = html;
+            } catch (error) {
+                document.getElementById('employeesContainer').innerHTML = 
+                    '<div class="error">Failed to load employees: ' + error.message + '</div>';
+            }
+        }
+
+        async function loadDepartmentsForSelect() {
+            try {
+                const response = await apiCall('/departments');
+                const departments = await response.json();
+                
+                const select = document.getElementById('empDepartment');
+                select.innerHTML = '<option value="">Select Department</option>';
+                departments.forEach(dept => {
+                    select.innerHTML += `<option value="${dept.departmentNo}">${dept.departmentName} - ${dept.departmentLocation}</option>`;
+                });
+            } catch (error) {
+                console.error('Failed to load departments for select:', error);
+            }
+        }
+
+        function showAddDepartmentForm() {
+            document.getElementById('addDepartmentForm').classList.remove('hidden');
+        }
+
+        function hideAddDepartmentForm() {
+            document.getElementById('addDepartmentForm').classList.add('hidden');
+            document.getElementById('deptName').value = '';
+            document.getElementById('deptLocation').value = '';
+        }
+
+        function showAddEmployeeForm() {
+            document.getElementById('addEmployeeForm').classList.remove('hidden');
+        }
+
+        function hideAddEmployeeForm() {
+            document.getElementById('addEmployeeForm').classList.add('hidden');
+            document.getElementById('empName').value = '';
+            document.getElementById('empSalary').value = '';
+            document.getElementById('empDepartment').value = '';
+        }
+
+        async function createDepartment() {
+            const name = document.getElementById('deptName').value;
+            const location = document.getElementById('deptLocation').value;
+            
+            if (!name || !location) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            try {
+                const response = await apiCall('/departments', 'POST', {
+                    departmentName: name,
+                    departmentLocation: location
+                });
+                
+                if (response.ok) {
+                    hideAddDepartmentForm();
+                    loadDepartments();
+                    loadDepartmentsForSelect();
+                    alert('Department created successfully');
+                } else {
+                    alert('Failed to create department');
+                }
+            } catch (error) {
+                alert('Error creating department: ' + error.message);
+            }
+        }
+
+        async function createEmployee() {
+            const name = document.getElementById('empName').value;
+            const salary = parseFloat(document.getElementById('empSalary').value);
+            const departmentNo = parseInt(document.getElementById('empDepartment').value);
+            
+            if (!name || !salary || !departmentNo) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            try {
+                const response = await apiCall('/employees', 'POST', {
+                    employeeName: name,
+                    salary: salary,
+                    departmentNo: departmentNo
+                });
+                
+                if (response.ok) {
+                    hideAddEmployeeForm();
+                    loadEmployees();
+                    alert('Employee created successfully');
+                } else {
+                    alert('Failed to create employee');
+                }
+            } catch (error) {
+                alert('Error creating employee: ' + error.message);
+            }
+        }
+
+        async function deleteDepartment(id) {
+            if (!confirm('Are you sure you want to delete this department?')) return;
+            
+            try {
+                const response = await apiCall(`/departments/${id}`, 'DELETE');
+                if (response.ok) {
+                    loadDepartments();
+                    loadDepartmentsForSelect();
+                    alert('Department deleted successfully');
+                } else {
+                    const error = await response.text();
+                    alert('Failed to delete department: ' + error);
+                }
+            } catch (error) {
+                alert('Error deleting department: ' + error.message);
+            }
+        }
+
+        async function deleteEmployee(id) {
+            if (!confirm('Are you sure you want to delete this employee?')) return;
+            
+            try {
+                const response = await apiCall(`/employees/${id}`, 'DELETE');
+                if (response.ok) {
+                    loadEmployees();
+                    alert('Employee deleted successfully');
+                } else {
+                    alert('Failed to delete employee');
+                }
+            } catch (error) {
+                alert('Error deleting employee: ' + error.message);
+            }
+        }
+
+        async function exportEmployees() {
+            try {
+                const response = await fetch(`${API_BASE}/employees/export`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const text = await response.text();
+                    const blob = new Blob([text], { type: 'text/plain' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'employees.txt';
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    alert('Failed to export employees');
+                }
+            } catch (error) {
+                alert('Error exporting employees: ' + error.message);
+            }
+        }
+
+        async function runQuery(queryType) {
+            try {
+                const response = await apiCall(`/queries/${queryType}`);
+                const result = await response.json();
+                
+                document.getElementById('queryResults').innerHTML = `
+                    <h4>${result.query}</h4>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            } catch (error) {
+                document.getElementById('queryResults').innerHTML = 
+                    '<div class="error">Failed to run query: ' + error.message + '</div>';
+            }
+        }
+
+        async function updateSalary() {
+            const empId = parseInt(document.getElementById('salaryEmpId').value);
+            const percentage = parseFloat(document.getElementById('salaryPercentage').value);
+            
+            if (!empId || isNaN(percentage)) {
+                alert('Please fill in all fields with valid numbers');
+                return;
+            }
+            
+            try {
+                const response = await apiCall(`/employees/${empId}/update-salary`, 'POST', {
+                    percentageChange: percentage
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    document.getElementById('salaryResults').innerHTML = `
+                        <div class="success">
+                            <h4>Salary Updated</h4>
+                            <p>Employee: ${result.employeeNo}</p>
+                            <p>Old Salary: $${result.oldSalary.toLocaleString()}</p>
+                            <p>New Salary: $${result.newSalary.toLocaleString()}</p>
+                        </div>
+                    `;
+                    loadEmployees(); // Refresh employee list
+                } else {
+                    alert('Failed to update salary');
+                }
+            } catch (error) {
+                alert('Error updating salary: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
